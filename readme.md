@@ -41,5 +41,5 @@ The script takes one mandatory argument: the starting URL.
 ### Syntax
 
 ```bash
-node crawler.js <URL>
+node start <URL>
 ```
