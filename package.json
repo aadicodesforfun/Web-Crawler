@@ -1,0 +1,17 @@
+{
+  "name": "webcrawler",
+  "version": "1.0.0",
+  "description": "A web crawler made in JS to extract images out of the provided site",
+  "license": "ISC",
+  "author": "Aditya Tripathi",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "clean": "rm -rf node_modules"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "node-fetch": "^3.3.2"
+  }
+}
