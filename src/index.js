@@ -1,43 +1,116 @@
 import fetch from "node-fetch";
-import * as cheerio from 'cheerio'
+import * as cheerio from 'cheerio';
+import * as fsPromises from "fs/promises";
+import * as fs from "fs";
+import * as path from "path";
+import { URL } from "url";
 
 const seenURLs = {};
+const START_URL = process.argv[2];
 
-const getUrl = (link) => {
-    if(link.includes('http')){
-        return link;
-    }else if(link.startsWith("/")){
-        return `http://localhost:8080${link}`;
-    }else{
-        return `http://localhost:8080/${link}`;
+const resolveUrl = (link, baseUrl) => {
+    if (!link) return link;
+    
+    try {
+        return new URL(link, baseUrl).href;
+    } catch (e) {
+        console.warn(`Invalid URL encountered: ${link} with base ${baseUrl}`);
+        return null;
     }
 }
 
-const crawl = async ({url}) => {
-    if(seenURLs[url]) return;
-    console.log('Crawling',url);
+const crawl = async ({ url }) => {
+    if (!url || seenURLs[url]) return;
+
+    let parsedUrl;
+    try {
+        parsedUrl = new URL(url);
+    } catch (e) {
+        console.error(`Skipping invalid start URL: ${url}`);
+        return;
+    }
+
+    const baseUrl = `${parsedUrl.protocol}//${parsedUrl.host}`;
+    
+    try {
+        await fsPromises.mkdir('images', { recursive: true });
+    } catch (err) {
+        console.error('Failed to create images directory: ', err.message);
+        return;
+    }
+
+    console.log('Crawling', url);
     seenURLs[url] = true;
 
-    const response = await fetch(url)
+    let response;
+    try {
+        response = await fetch(url);
+    } catch (err) {
+        console.error(`Failed to fetch ${url}: `, err.message);
+        return;
+    }
+    
+    if (!response.ok) {
+        console.error(`Request failed with status ${response.status} for ${url}`);
+        return;
+    }
+
     const html = await response.text();
     const $ = cheerio.load(html);
-    const links = $("a")
-        .map((i, link) => link.attribs.href)
-        .get();
 
-    const images = $("img")
-        .map((i, link) => link.attribs.src)
-        .get();
-    console.log("images", images);
-    
+    const rawLinks = $("a").map((i, link) => link.attribs.href).get();
+    const rawImageURLs = $("img").map((i, link) => link.attribs.src).get();
 
-    links.forEach(link => {
-        crawl({
-            url:getUrl(link),
+    const imageDownloadPromises = rawImageURLs.map(async (imageURL) => {
+        const fullImageUrl = resolveUrl(imageURL, baseUrl);
+        if (!fullImageUrl) return;
+
+        try {
+            const imgResponse = await fetch(fullImageUrl);
+            if (!imgResponse.ok) {
+                console.error(`Image fetch failed for ${fullImageUrl}: ${imgResponse.status}`);
+                return;
+            }
+
+            const urlObject = new URL(fullImageUrl);
+            const filename = path.basename(urlObject.pathname);
+            const destPath = path.join('images', filename);
+            
+            const dest = fs.createWriteStream(destPath); 
+
+            await new Promise((resolve, reject) => {
+                imgResponse.body.pipe(dest);
+                dest.on('finish', resolve);
+                dest.on('error', reject);
+            });
+            console.log(`Saved image: ${filename}`);
+            
+        } catch (err) {
+            console.error(`Error saving image ${fullImageUrl}:`, err.message);
+        }
+    });
+
+    await Promise.all(imageDownloadPromises);
+
+    const targetHostname = parsedUrl.hostname;
+
+    const crawlPromises = rawLinks
+        .map(link => resolveUrl(link, baseUrl))
+        .filter(fullLink => {
+            if (!fullLink) return false;
+            try {
+                return new URL(fullLink).hostname.includes(targetHostname);
+            } catch {
+                return false;
+            }
         })
-    })
+        .map(fullLink => {
+            return crawl({ url: fullLink });
+        });
+
+    await Promise.all(crawlPromises);
 }
 
 crawl({
-    url: "http://127.0.0.1:8080/index.html"
-})
+    url: START_URL
+});

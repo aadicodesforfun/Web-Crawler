@@ -10,6 +10,7 @@ build/
 .vscode/
 coverage/
 *.log
+/images/
 
 .npm
 .cache
