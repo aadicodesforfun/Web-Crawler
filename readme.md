@@ -41,5 +41,5 @@ The script takes one mandatory argument: the starting URL.
 ### Syntax
 
 ```bash
-node start <URL>
+npm start <URL>
 ```
